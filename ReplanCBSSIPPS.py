@@ -4,49 +4,13 @@ from collisionneighbourhood import *
 from failureBasedNeighbourhood2 import *
 from randomNeighborhood import *
 from prioritizedPlanning import *
-from LNSUtil import *
+from Utils import *
 from pathlib import Path
-from SIPPS2 import *
-from loadscen import *
+from SIPPS import *
 import time as timer
 
-def import_mapf_instance(filename):
-    f = Path(filename)
-    if not f.is_file():
-        raise BaseException(filename + " does not exist.")
-    f = open(filename, 'r')
-    # first line: #rows #columns
-    line = f.readline()
-    rows, columns = [int(x) for x in line.split(' ')]
-    rows = int(rows)
-    columns = int(columns)
-    # #rows lines with the map
-    my_map = []
-    for r in range(rows):
-        line = f.readline()
-        my_map.append([])
-        for cell in line:
-            if cell == '@':
-                my_map[-1].append(True)
-            elif cell == '.':
-                my_map[-1].append(False)
-    # #agents
-    line = f.readline()
-    num_agents = int(line)
-    # #agents lines with the start/goal positions
-    starts = []
-    goals = []
-    for a in range(num_agents):
-        line = f.readline()
-        sx, sy, gx, gy = [int(x) for x in line.split(' ')]
-        starts.append((sx, sy))
-        goals.append((gx, gy))
-    f.close()
-    return my_map, starts, goals
-
-
 # replan untill collision free
-def replan(paths, numNeighbourhood, width, height, instanceMap, instanceStarts, instanceGoals, ALNS_weight, prevCP, timeLimit, start):
+def replan(paths, numNeighbourhood, instanceMap, instanceStarts, instanceGoals, ALNS_weight, prevCP, timeLimit, start):
     # select a neighbourhood construction method
         
     # 0: collision, 1: failure, 2: random
@@ -55,7 +19,7 @@ def replan(paths, numNeighbourhood, width, height, instanceMap, instanceStarts, 
     neighbourhood = []
     if neighbourhood_kind == 0:
         print('collisionNeighbourhood')
-        neighbourhood = collisionNeighbourhood(paths, numNeighbourhood, width, height, instanceMap)
+        neighbourhood = collisionNeighbourhood(paths, numNeighbourhood, instanceMap)
     elif neighbourhood_kind == 1:
         print('failureNeighbourhood')
         neighbourhood = failureNeighbourhood(paths, numNeighbourhood)
@@ -94,7 +58,7 @@ def replan(paths, numNeighbourhood, width, height, instanceMap, instanceStarts, 
     return paths, prevCP
 
 
-def LNS2CBS(numNeighbourhood, width, height, instanceMap, instanceStarts, instanceGoals, timeLimit):
+def LNS2CBS(numNeighbourhood, instanceMap, instanceStarts, instanceGoals, timeLimit):
     paths = list(range(len(instanceGoals)))
     neighbourhood, newPaths = prioritized_planning([], list(range(len(instanceGoals))), instanceMap, instanceStarts, instanceGoals)
     for i in range(len(neighbourhood)):
@@ -111,14 +75,14 @@ def LNS2CBS(numNeighbourhood, width, height, instanceMap, instanceStarts, instan
 
     replan_counter = 0
     while numCp != 0:
-        paths, numCp = replan(paths, numNeighbourhood, width, height, instanceMap, instanceStarts, instanceGoals, ALNS_weight, numCp, timeLimit, start)
+        paths, numCp = replan(paths, numNeighbourhood, instanceMap, instanceStarts, instanceGoals, ALNS_weight, numCp, timeLimit, start)
         replan_counter += 1
         if paths == None:
             return None, None, None
 
     return paths, start, replan_counter
 
-
+'''
 if __name__ == "__main__":
     numNeighbourhood = 5
     numAgent = 10
@@ -128,3 +92,4 @@ if __name__ == "__main__":
     print("solution")
     for path in paths:
         print(path)
+'''

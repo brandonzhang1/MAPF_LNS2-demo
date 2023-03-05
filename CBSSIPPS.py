@@ -2,8 +2,8 @@ import time as timer
 import heapq
 import random
 import copy
-from SIPPS2 import *
-from Utils2 import *
+from SIPPS import *
+from Utils import *
 from prioritizedPlanning import add_constraints_from_path
 
 
@@ -65,34 +65,6 @@ def standard_splitting(collision):
     else:
         constraints.append({'agent': collision['a1'], 'loc': (collision['loc'][0], collision['loc'][1]), 'timestep': collision['timestep']})
         constraints.append({'agent': collision['a2'], 'loc': (collision['loc'][1], collision['loc'][0]), 'timestep': collision['timestep']})
-    return constraints
-
-
-def disjoint_splitting(collision):
-    ##############################
-    # Task 4.1: Return a list of (two) constraints to resolve the given collision
-    #           Vertex collision: the first constraint enforces one agent to be at the specified location at the
-    #                            specified timestep, and the second constraint prevents the same agent to be at the
-    #                            same location at the timestep.
-    #           Edge collision: the first constraint enforces one agent to traverse the specified edge at the
-    #                          specified timestep, and the second constraint prevents the same agent to traverse the
-    #                          specified edge at the specified timestep
-    #           Choose the agent randomly
-    constraints = []
-    if len(collision['loc']) == 1:
-        if random.randint(0, 1) >= 0.5:
-            constraints.append({'agent': collision['a1'], 'loc': collision['loc'][0], 'timestep': collision['timestep'], 'positive': True})
-            constraints.append({'agent': collision['a1'], 'loc': collision['loc'][0], 'timestep': collision['timestep']})
-        else:
-            constraints.append({'agent': collision['a2'], 'loc': collision['loc'], 'timestep': collision['timestep'], 'positive': True})
-            constraints.append({'agent': collision['a2'], 'loc': collision['loc'], 'timestep': collision['timestep']})
-    else:
-        if random.randint(0, 1) >= 0.5:
-            constraints.append({'agent': collision['a1'], 'loc': (collision['loc'][1], collision['loc'][0]), 'timestep': collision['timestep'], 'positive': True})
-            constraints.append({'agent': collision['a1'], 'loc': (collision['loc'][1], collision['loc'][0]), 'timestep': collision['timestep']})
-        else:
-            constraints.append({'agent': collision['a2'], 'loc': (collision['loc'][1], collision['loc'][0]), 'timestep': collision['timestep'], 'positive': True})
-            constraints.append({'agent': collision['a2'], 'loc': (collision['loc'][1], collision['loc'][0]), 'timestep': collision['timestep']})
     return constraints
     
 

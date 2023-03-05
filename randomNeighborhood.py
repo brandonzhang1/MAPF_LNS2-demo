@@ -1,5 +1,5 @@
 import random
-from LNSUtil import *
+from Utils import *
 
 
 # path: lists of paths for all agents

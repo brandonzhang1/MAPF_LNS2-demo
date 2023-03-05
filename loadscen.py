@@ -15,7 +15,8 @@ def loadScen(scenarioFile, numAgents):
 	mapName = tokens[1]
 	mapWidth = int(tokens[2])
 	mapHeight = int(tokens[3])
-	f2 = open('map/'+mapName, 'r')
+	#f2 = open('map/'+mapName, 'r')
+	f2 = open(mapName, 'r')
 	mapline = f2.readline() #advance to map data
 	mapline = f2.readline()
 	mapline = f2.readline()
