@@ -13,15 +13,6 @@ def drawCell(surface, x, y, colour, cellSize, width=0):
 def drawBigCell(surface, x, y, colour, cellSize, width=0):
 	pg.draw.rect(surface, colour, (x*cellSize-2, y*cellSize-2, cellSize+4, cellSize+4), width)
 
-#initial paths: move completed agents to current solution
-#improved solution: move completed agents to current solution
-#no improvement: do nothing
-
-#neighbourhood: create new static for outside agents (draw outline on agents)
-#pathing for agent: note agent number 
-#isocost contour: create new frontier Surface from previous step
-#path done: (draw path), add to PP completed agents, create new static from neighbourhood static and PP completed agents
-
 def drawPath(path, colour, mapSize, cellSize, width=0):
 	pathSurface = pg.Surface(mapSize)
 	pathSurface.set_colorkey(pg.Color(0, 0, 0))
@@ -47,14 +38,10 @@ def recv_animation_directives(directivesQueue, history, mapSurface, cellSize, pa
 		if index >= len(directivesQueue):
 			if directivesQueue[-1] == 'done':
 				return
-			#print('debug2')
-			#time.sleep(0.2)
 		else:
-			#print('debug')
 			directive = directivesQueue[index]
 			index+=1
 			if directive == 'done':
-				#draw last frame with path solutions
 				stop = True
 				break
 
@@ -82,10 +69,6 @@ def recv_animation_directives(directivesQueue, history, mapSurface, cellSize, pa
 					if i not in currStep[1]['neighbourhood']:
 						temp = currStep[0][i]['surface']
 						newStatic.blit(temp[0], (temp[3]*cellSize, temp[1]*cellSize), (temp[3]*cellSize, temp[1]*cellSize, (temp[4]-temp[3])*cellSize, (temp[2]-temp[1])**cellSize))
-				#draw purple boxes around neighbourhood agents
-				#colour = pg.Color((200, 0, 200))
-				#for agent in currStep[1]['neighbourhood']:
-				#	drawCell(newStatic, starts[agent][0], starts[agent][1], colour, cellSize, 1)
 
 				oldCollisions = currStep[5]
 				#filter collisions without neighbourood paths
@@ -260,62 +243,19 @@ if __name__ == '__main__':
 	pg.display.update()
 
 
-	executor = thread.ThreadPoolExecutor()
-
-	#setup parallel processes and pipes
-	#parentPipe, childPipe = mp.Pipe()
 	directivesQueue = []
+	executor = thread.ThreadPoolExecutor()
 	t1 = executor.submit(LNS2PP, neighbourhoodSize, instanceMap, starts, goals, directivesQueue)
-
-	#todos
-	#for solution step animation directives, aggregate in steppable list using seperate thread to allow input commands
-	#recieve animation directives for each distinct cost level of SIPPS (integrate pipe to SIPPS.py)
-	#	post new slice of closed list, post new open list
-
-	#animation directives
-	# selecting neighbourhood: selected strategy, updated probabilities
-	# greying outside agent paths & clearing selected agent paths
-	# SIPPS isocost steps for agent
-	# soft collision detected colouring
-	# path found colouring
-	# solution not found, return to previous replanning paths
-
-
-	#for pathfinding isocost contours, can use a common static of map + outside and previous agents
-	# between steps for an agent's pathing, copy Surface of previous frontier on transparent background and add new cells
-
-	#general: when to compose new static
-	#neighbourhood selection: map + outside agents
-	#during prioritized planning, map + outside agents + prior agents
-	#create a new static for each sequence of frames, re-reference
-	#to create new static, maintain: map, current solution, neighbourhood, PP completed agents
-
-	#initial paths: move completed agents to current solution
-	#improved solution: move completed agents to current solution
-	#no improvement: do nothing
-
-	#neighbourhood: create new static for outside agents (draw outline on agents)
-	#pathing for agent: note agent number 
-	#isocost contour: create new frontier Surface from previous step
-	#path done: (draw path), add to PP completed agents, create new static from neighbourhood static and PP completed agents
 
 	#current solution, neighbourhood, PP completed agents, static, current agent path exploration, collisions
 	eventHistory = [ [ [None]*numAgents, set(list(range(numAgents))), [], mapSurface, None, [] ] ]
 	t2 = executor.submit(recv_animation_directives, directivesQueue, eventHistory, mapSurface, cellSize, pathColours, starts)
 	executor.shutdown(False)
 
-
 	def renderFrame(eventHistory, eventHistory_idx):
 		if eventHistory_idx < len(eventHistory):
 			#draw static
 			displaySurface.blit(eventHistory[eventHistory_idx][3], (0, 0))
-			'''
-			#draw completed paths
-			temp = eventHistory[eventHistory_idx][2]
-			for agentPath in temp:
-				for i in range(1, len(agentPath['path'])-1):
-					drawCell(displaySurface, agentPath['path'][i][0], agentPath['path'][i][1], pathColours[agentPath['agent']], cellSize)
-			'''
 
 			#draw current path progress
 			if eventHistory[eventHistory_idx][4] != None:
