@@ -3,6 +3,7 @@ from ReplanPPSIPPS import *
 import pygame as pg
 import threading
 import multiprocessing as mp
+from concurrent.futures import thread
 import time
 import copy
 
@@ -42,8 +43,12 @@ def recv_animation_directives(directivesQueue, history, mapSurface, cellSize, pa
 	lastImprovedStatic = None
 	while stop == False:
 		if index >= len(directivesQueue):
-			time.sleep(0.2)
+			if directivesQueue[-1] == 'done':
+				return
+			#print('debug2')
+			#time.sleep(0.2)
 		else:
+			#print('debug')
 			directive = directivesQueue[index]
 			index+=1
 			if directive == 'done':
@@ -62,18 +67,6 @@ def recv_animation_directives(directivesQueue, history, mapSurface, cellSize, pa
 						'surface': agentPath['surface']
 					}
 				currStep[2] = []
-				'''
-				#draw paths on static
-				newStatic = mapSurface.copy()
-				for i in range(len(currStep[0])):
-					temp = currStep[0][i]['surface']
-					newStatic.blit(temp[0], (temp[3], temp[1]), (temp[3], temp[1], temp[4]-temp[3], temp[2]-temp[1]))
-				#detect and draw collisions
-				for collision in currStep[5]:
-					drawCell(newStatic, collision[0][0], collision[0][1], pg.Color((200, 0, 0)), cellSize, 1)
-
-				currStep[3] = newStatic
-				'''
 				lastImprovedStatic = currStep[3].copy()
 				currStep[4] = None
 				
@@ -223,7 +216,6 @@ if __name__ == '__main__':
 	scenarioFile = 'Boston_0_256-even-1.scen'
 	instanceMap, starts, goals = loadScen(scenarioFile, numAgents)
 
-
 	#setup animation resources
 	pg.init()
 	mapHeight = len(instanceMap)
@@ -264,12 +256,12 @@ if __name__ == '__main__':
 	pg.display.update()
 
 
+	executor = thread.ThreadPoolExecutor()
+
 	#setup parallel processes and pipes
 	#parentPipe, childPipe = mp.Pipe()
 	directivesQueue = []
-	t1 = threading.Thread(target=LNS2PP, args=(neighbourhoodSize, instanceMap, starts, goals, directivesQueue,))
-	t1.run()
-	print('asd')
+	executor.submit(LNS2PP, neighbourhoodSize, instanceMap, starts, goals, directivesQueue)
 
 	#todos
 	#for solution step animation directives, aggregate in steppable list using seperate thread to allow input commands
@@ -304,9 +296,10 @@ if __name__ == '__main__':
 	#path done: (draw path), add to PP completed agents, create new static from neighbourhood static and PP completed agents
 
 	#current solution, neighbourhood, PP completed agents, static, current agent path exploration, collisions
-	eventHistory = [[[None]*numAgents, set(list(range(numAgents))), [], mapSurface, None, []]]
-	t2 = threading.Thread(target=recv_animation_directives, args=(directivesQueue, eventHistory, mapSurface, cellSize, pathColours, starts))
-	t2.run()
+	eventHistory = [ [ [None]*numAgents, set(list(range(numAgents))), [], mapSurface, None, [] ] ]
+	executor.submit(recv_animation_directives, directivesQueue, eventHistory, mapSurface, cellSize, pathColours, starts)
+	executor.shutdown(False)
+
 
 	def renderFrame(eventHistory, eventHistory_idx):
 		if eventHistory_idx < len(eventHistory):
@@ -341,12 +334,11 @@ if __name__ == '__main__':
 		time = pg.time.get_ticks()
 		currFrame = time * frameRate // 1000
 		if currFrame != lastDrawnFrame and pause == False:
+			#print(len(directivesQueue), len(eventHistory))
 			#draw next frame
 			lastDrawnFrame = currFrame
 			renderFrame(eventHistory, eventHistory_idx)
 			eventHistory_idx = min(eventHistory_idx + 1, len(eventHistory)-1)
-
-
 
 		for event in pg.event.get():
 			if event.type == pg.QUIT:

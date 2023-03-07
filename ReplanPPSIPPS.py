@@ -107,7 +107,6 @@ def replan(paths, numNeighbourhood, instanceMap, instanceStarts, instanceGoals, 
 
 
 def LNS2PP(numNeighbourhood, instanceMap, instanceStarts, instanceGoals, directivesQueue):
-
     paths = list(range(len(instanceGoals)))
     neighbourhood, newPaths = prioritized_planning([], list(range(len(instanceGoals))), instanceMap, instanceStarts, instanceGoals, directivesQueue)
     for i in range(len(neighbourhood)):
