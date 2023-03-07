@@ -10,6 +10,8 @@ import copy
 def drawCell(surface, x, y, colour, cellSize, width=0):
 	pg.draw.rect(surface, colour, (x*cellSize, y*cellSize, cellSize, cellSize), width)
 
+def drawBigCell(surface, x, y, colour, cellSize, width=0):
+	pg.draw.rect(surface, colour, (x*cellSize-2, y*cellSize-2, cellSize+4, cellSize+4), width)
 
 #initial paths: move completed agents to current solution
 #improved solution: move completed agents to current solution
@@ -39,7 +41,7 @@ def recv_animation_directives(directivesQueue, history, mapSurface, cellSize, pa
 	history[0][3] = mapSurface.copy()
 	stop = False
 	index = 0
-	newCollisions = []
+	oldCollisions = []
 	lastImprovedStatic = None
 	while stop == False:
 		if index >= len(directivesQueue):
@@ -72,7 +74,6 @@ def recv_animation_directives(directivesQueue, history, mapSurface, cellSize, pa
 				
 
 			if directive[0] == 'neighbourhood':
-				newCollisions = []
 				currStep[1] = {'neighbourhood': directive[2], 'ALNSweights': directive[3]}
 				#create new static
 				newStatic = mapSurface.copy()
@@ -82,18 +83,18 @@ def recv_animation_directives(directivesQueue, history, mapSurface, cellSize, pa
 						temp = currStep[0][i]['surface']
 						newStatic.blit(temp[0], (temp[3]*cellSize, temp[1]*cellSize), (temp[3]*cellSize, temp[1]*cellSize, (temp[4]-temp[3])*cellSize, (temp[2]-temp[1])**cellSize))
 				#draw purple boxes around neighbourhood agents
-				colour = pg.Color((200, 0, 200))
-				for agent in currStep[1]['neighbourhood']:
-					drawCell(newStatic, starts[agent][0], starts[agent][1], colour, cellSize, 1)
+				#colour = pg.Color((200, 0, 200))
+				#for agent in currStep[1]['neighbourhood']:
+				#	drawCell(newStatic, starts[agent][0], starts[agent][1], colour, cellSize, 1)
 
+				oldCollisions = currStep[5]
 				#filter collisions without neighbourood paths
-				for collision in currStep[5]:
+				currStep[5] = []
+				for collision in oldCollisions:
 					if collision[1] not in currStep[1]['neighbourhood'] and collision[2] not in currStep[1]['neighbourhood']:
-						newCollisions.append(collision)
+						currStep[5].append(collision)
+				print("outer neighbourhood collisions", len(currStep[5]))
 				#draw red boxes around temp collisions
-				colour = pg.Color((200, 0, 0))
-				for collision in newCollisions:
-					drawCell(newStatic, collision[0][0], collision[0][1], colour, cellSize, 1)
 
 				currStep[3] = newStatic
 
@@ -121,12 +122,12 @@ def recv_animation_directives(directivesQueue, history, mapSurface, cellSize, pa
 						#check for new area boundary
 						if loc[1] < nextStep[4][1]:
 							nextStep[4][1] = loc[1]
-						if loc[1] > nextStep[4][2]:
-							nextStep[4][2] = loc[1]
+						if loc[1]+1 > nextStep[4][2]:
+							nextStep[4][2] = loc[1]+1
 						if loc[0] < nextStep[4][3]:
 							nextStep[4][3] = loc[0]
-						if loc[0] > nextStep[4][4]:
-							nextStep[4][4] = loc[0]
+						if loc[0]+1 > nextStep[4][4]:
+							nextStep[4][4] = loc[0]+1
 					nextStep[4][0] = contourSurface
 					history.append(nextStep)
 					prevStep = history[-1]
@@ -154,11 +155,12 @@ def recv_animation_directives(directivesQueue, history, mapSurface, cellSize, pa
 				currStep[4] = None
 
 				#check for collisions and add to collisions and draw to static
+				currStep[5] = copy.copy(currStep[5])
 				for priorPath in currStep[2]:
 					for i in range(min(len(priorPath['path']), len(newPath['path']))):
 						if newPath['path'][i] == priorPath['path'][i]:
 							collision = (newPath['path'][i], newPath['agent'], priorPath['agent'])
-							newCollisions.append(collision)
+							currStep[5].append(collision)
 							drawCell(currStep[3], collision[0][0], collision[0][1], pg.Color((200, 0, 0)), cellSize, 1)
 
 				#add new path to neighbourhood completed paths
@@ -185,8 +187,10 @@ def recv_animation_directives(directivesQueue, history, mapSurface, cellSize, pa
 				currStep[4] = None
 
 				#add new collisions
-				currStep[5] = newCollisions
-				newCollisions = []
+				#currStep[5] = newCollisions
+				#newCollisions = []
+				oldCollisions = currStep[5]
+				print("new collision total", len(currStep[5]))
 
 			if directive[0] == 'no improvement':
 				#revert to previous solution and static
@@ -205,14 +209,14 @@ def recv_animation_directives(directivesQueue, history, mapSurface, cellSize, pa
 				currStep[4] = None
 
 				#clear new collisions
-				newCollisions = []
-
+				currStep[5] = oldCollisions
+				print("old collision total", len(currStep[5]))
 
 
 
 if __name__ == '__main__':
 	neighbourhoodSize = 4
-	numAgents = 7
+	numAgents = 20
 	scenarioFile = 'Boston_0_256-even-1.scen'
 	instanceMap, starts, goals = loadScen(scenarioFile, numAgents)
 
@@ -261,7 +265,7 @@ if __name__ == '__main__':
 	#setup parallel processes and pipes
 	#parentPipe, childPipe = mp.Pipe()
 	directivesQueue = []
-	executor.submit(LNS2PP, neighbourhoodSize, instanceMap, starts, goals, directivesQueue)
+	t1 = executor.submit(LNS2PP, neighbourhoodSize, instanceMap, starts, goals, directivesQueue)
 
 	#todos
 	#for solution step animation directives, aggregate in steppable list using seperate thread to allow input commands
@@ -297,7 +301,7 @@ if __name__ == '__main__':
 
 	#current solution, neighbourhood, PP completed agents, static, current agent path exploration, collisions
 	eventHistory = [ [ [None]*numAgents, set(list(range(numAgents))), [], mapSurface, None, [] ] ]
-	executor.submit(recv_animation_directives, directivesQueue, eventHistory, mapSurface, cellSize, pathColours, starts)
+	t2 = executor.submit(recv_animation_directives, directivesQueue, eventHistory, mapSurface, cellSize, pathColours, starts)
 	executor.shutdown(False)
 
 
@@ -313,7 +317,7 @@ if __name__ == '__main__':
 					drawCell(displaySurface, agentPath['path'][i][0], agentPath['path'][i][1], pathColours[agentPath['agent']], cellSize)
 			'''
 
-			#drawn current path progress
+			#draw current path progress
 			if eventHistory[eventHistory_idx][4] != None:
 				temp = eventHistory[eventHistory_idx][4]
 				top = temp[1]
@@ -322,6 +326,14 @@ if __name__ == '__main__':
 				height = temp[2] - top
 				displaySurface.blit(temp[0], (left*cellSize, top*cellSize), 
 					(left*cellSize, top*cellSize, width*cellSize, height*cellSize))
+
+			#draw collisions
+			red = pg.Color((220, 0, 0))
+			if len(eventHistory[eventHistory_idx][5]) > 0:
+				#print(eventHistory[eventHistory_idx][5])
+				for collision in eventHistory[eventHistory_idx][5]:
+					#print(collision)
+					drawBigCell(displaySurface, collision[0][0], collision[0][1], red, cellSize)
 		pg.display.update()
 
 	running = True
@@ -342,6 +354,8 @@ if __name__ == '__main__':
 
 		for event in pg.event.get():
 			if event.type == pg.QUIT:
+				t1.cancel()
+				t2.cancel()
 				running = False
 			if event.type == pg.KEYDOWN:
 				if event.key == pg.K_SPACE:
