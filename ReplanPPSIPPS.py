@@ -6,7 +6,7 @@ from Utils import *
 from SIPPS import *
 import time as timer
 
-def prioritized_planning(paths, neighbourhood, instanceMap, instanceStarts, instanceGoals):
+def prioritized_planning(paths, neighbourhood, instanceMap, instanceStarts, instanceGoals, directivesQueue):
     #randomize order of neighbourhood
     neighbourhood = priorityList(neighbourhood)
 
@@ -27,10 +27,12 @@ def prioritized_planning(paths, neighbourhood, instanceMap, instanceStarts, inst
     for agent in neighbourhood:
         agentStart = instanceStarts[agent] #coordinates are in (x, y), map indexing is in [y][x]
         agentGoal = instanceGoals[agent]
+        directivesQueue.append(['pathing for agent', agent])
 
         #build heuristics table
         h_values = compute_heuristics(instanceMap, agentGoal)
-        agentPath = sipps(instanceMap, agentStart, agentGoal, h_values, hard_obstacles, soft_obstacles)
+        agentPath = sipps(instanceMap, agentStart, agentGoal, h_values, hard_obstacles, soft_obstacles, directivesQueue)
+        directivesQueue.append(['path done', agent, agentPath])
         newPaths.append(agentPath)
         if agentPath != None:
             add_constraints_from_path(soft_obstacles, agentPath)
@@ -67,7 +69,7 @@ def priorityList(neighbourhood):
 
 
 # replan untill collision free
-def replan(paths, numNeighbourhood, instanceMap, instanceStarts, instanceGoals, ALNS_weight, prevCP, childpipe):
+def replan(paths, numNeighbourhood, instanceMap, instanceStarts, instanceGoals, ALNS_weight, prevCP, directivesQueue):
     # select a neighbourhood construction method
 
     # 0: collision, 1: failure, 2: random
@@ -75,13 +77,16 @@ def replan(paths, numNeighbourhood, instanceMap, instanceStarts, instanceGoals, 
 
     if neighbourhood_kind == 0:
         neighbourhood = collisionNeighbourhood(paths, numNeighbourhood, instanceMap)
+        directivesQueue.append(['neighbourhood', 'collision', neighbourhood, ALNS_weight])
     elif neighbourhood_kind == 1:
         neighbourhood = failureNeighbourhood(paths, numNeighbourhood)
+        directivesQueue.append(['neighbourhood', 'failure', neighbourhood, ALNS_weight])
     else:
         neighbourhood = randomNeighbourhood(paths, numNeighbourhood)
+        directivesQueue.append(['neighbourhood', 'random', neighbourhood, ALNS_weight])
 
     #run modified prioritized planning to get replanned paths
-    neighbourhood, newPaths = prioritized_planning(paths, neighbourhood, instanceMap, instanceStarts, instanceGoals)
+    neighbourhood, newPaths = prioritized_planning(paths, neighbourhood, instanceMap, instanceStarts, instanceGoals, directivesQueue)
 
     #construct new paths solution and update variables
     newPathsSolution = copy.copy(paths)
@@ -94,19 +99,21 @@ def replan(paths, numNeighbourhood, instanceMap, instanceStarts, instanceGoals, 
     ALNS_weight = updateWeight(ALNS_weight, 0.1, prevCP, numCp_newPathsSolution, neighbourhood_kind)
 
     if (prevCP >= numCp_newPathsSolution):
-        childpipe.send([neighbourhood, newPathsSolution])
+        directivesQueue.append(['improved solution'])
         return newPathsSolution, numCp_newPathsSolution
 
-    childpipe.send(None)
+    directivesQueue.append(['no improvement'])
     return paths, prevCP
 
 
-def LNS2PP(numNeighbourhood, instanceMap, instanceStarts, instanceGoals, childpipe):
+def LNS2PP(numNeighbourhood, instanceMap, instanceStarts, instanceGoals, directivesQueue):
+
     paths = list(range(len(instanceGoals)))
-    neighbourhood, newPaths = prioritized_planning([], list(range(len(instanceGoals))), instanceMap, instanceStarts, instanceGoals)
+    neighbourhood, newPaths = prioritized_planning([], list(range(len(instanceGoals))), instanceMap, instanceStarts, instanceGoals, directivesQueue)
     for i in range(len(neighbourhood)):
         paths[neighbourhood[i]] = newPaths[i]
-    childpipe.send([neighbourhood, paths])
+    directivesQueue.append(['initial paths'])
+    
 
     collisions = degID(paths)
     numCp = 0
@@ -114,7 +121,7 @@ def LNS2PP(numNeighbourhood, instanceMap, instanceStarts, instanceGoals, childpi
 
     startTime = timer.time_ns()
     if (numCp == 0):
-        childpipe.send('done')
+        directivesQueue.append('done')
         return paths, startTime, 0
 
     ALNS_weight = [1, 1, 1]
@@ -122,13 +129,13 @@ def LNS2PP(numNeighbourhood, instanceMap, instanceStarts, instanceGoals, childpi
 
     replan_counter = 0
     while numCp != 0:
-
-        paths, numCp = replan(paths, numNeighbourhood, instanceMap, instanceStarts, instanceGoals, ALNS_weight, numCp, childpipe)
+        paths, numCp = replan(paths, numNeighbourhood, instanceMap, instanceStarts, instanceGoals, ALNS_weight, numCp, directivesQueue)
         replan_counter += 1
         if paths == None:
+            directivesQueue.append('done')
             return None, None, None
     
-    childpipe.send('done')
+    directivesQueue.append('done')
     return paths, startTime, replan_counter
 
 # if __name__ == "__main__":

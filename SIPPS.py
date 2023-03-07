@@ -96,11 +96,11 @@ def build_safe_interval_table(my_map, hard_obstacles, soft_obstacles):
 
     return safe_interval_table
 
-def insert_node(node, open_list, key_heap, visited_list, h_values, soft_obstacle, count_tie_break):
-    g_val = node['g_val']
+def insert_node(node, open_list, key_heap, visited_list, h_values, soft_obstacle, count_tie_break, newOpen):
     h_val = node['h_val']
-    f_val = g_val + h_val
     c_val = node['c_val']
+    f_val = c_val + h_val
+    
     
     n_low = node['interval'][0]
     n_high = node['interval'][1]
@@ -134,7 +134,7 @@ def insert_node(node, open_list, key_heap, visited_list, h_values, soft_obstacle
                 updated_i_node = copy.copy(visited_list[node_sig][i_node_sig_2][0])
                 updated_i_node['interval'] = (updated_i_node['interval'][0], n_low)
 
-    combined_heuristic = (c_val, f_val, -g_val)
+    combined_heuristic = (f_val, c_val)
     tie_break = 0
     if combined_heuristic in count_tie_break:
         tie_break = count_tie_break[combined_heuristic]
@@ -142,10 +142,11 @@ def insert_node(node, open_list, key_heap, visited_list, h_values, soft_obstacle
     else:
         tie_break = 0
         count_tie_break[combined_heuristic] = -1
-    key = (c_val, f_val, -g_val, tie_break)
+    key = (f_val, c_val, tie_break)
 
     heapq.heappush(key_heap, key)
     open_list[key] = node
+    newOpen.add(node['loc'])
     if node_sig not in visited_list:
         visited_list[node_sig] = {}
     if node_sig_2 not in visited_list[node_sig]:
@@ -190,12 +191,15 @@ def get_earliest_arrival_time(curr_loc, edge, low, high_limit, hard_obstacle, so
             return new_low
     return None
 
-def expand_node(my_map, curr_node, open_list, key_heap, visited_list, safe_interval_table, hard_obstacle, soft_obstacle, h_values, count_tie_break):
+def expand_node(my_map, curr_node, open_list, key_heap, visited_list, safe_interval_table, hard_obstacle, soft_obstacle, h_values, count_tie_break, newOpen, newClosed):
     valid_neighbors = []
     curr_loc = curr_node['loc']
     node_low = curr_node['interval'][0]
     node_high = curr_node['interval'][1]
-    
+    if curr_loc in newOpen:
+        newOpen.remove(curr_loc)
+    newClosed.add(curr_loc)
+
     valid_neighbors = get_valid_nodes(my_map, curr_loc, node_low, node_high, safe_interval_table)
     #print("valid_neighbors", valid_neighbors)
     # Algorithm 2 line 2-3
@@ -217,10 +221,14 @@ def expand_node(my_map, curr_node, open_list, key_heap, visited_list, safe_inter
             #temp = safe_interval_table[curr_node['loc']][curr_node['id']]
             if safe_interval_table[curr_node['loc']][curr_node['id']][2] == 1:
                 c_val += earliest_low - node_low
-            next_node = {'c_val': c_val, 'loc': next_loc, 'g_val': curr_node['g_val'] + earliest_low - node_low,
-                        'h_val': h_values[next_loc], 'interval': (earliest_low, high), 'id': interval_id,
-                        'is_goal': False, 'parent': curr_node}
-            insert_node(next_node, open_list, key_heap, visited_list, h_values, soft_obstacle, count_tie_break)
+            else:
+                c_val += 1
+            next_node = {'loc': next_loc, 'c_val': c_val, 'h_val': h_values[next_loc], 
+                        'interval': (earliest_low, high), 'id': interval_id, 'is_goal': False, 
+                        'parent': curr_node}
+            insert_node(next_node, open_list, key_heap, visited_list, h_values, soft_obstacle, count_tie_break, newOpen)
+
+
 
 def get_c_future(curr_loc, soft_obstacle, n_low):
     c_future = 0
@@ -251,12 +259,12 @@ def get_path(goal_node):
     path.reverse()
     return path
 
-def sipps(my_map, start_loc, goal_loc, h_values, hard_obstacle, soft_obstacle):    
+def sipps(my_map, start_loc, goal_loc, h_values, hard_obstacle, soft_obstacle, directivesQueue):    
 
     safe_interval_table = build_safe_interval_table(my_map, hard_obstacle, soft_obstacle)  #my_map is avaialble paths excluding walls
     #print(safe_interval_table)
 
-    root = {'c_val': 0, 'loc': start_loc, 'g_val': 0, 'h_val': h_values[start_loc], 'interval': safe_interval_table[start_loc][0], 'id': 0, 'is_goal': False, 'parent': None}
+    root = {'loc': start_loc, 'c_val': 0, 'h_val': h_values[start_loc], 'interval': safe_interval_table[start_loc][0], 'id': 0, 'is_goal': False, 'parent': None}
     lower_bound_timestep = 0
 
     if goal_loc in hard_obstacle:
@@ -264,13 +272,18 @@ def sipps(my_map, start_loc, goal_loc, h_values, hard_obstacle, soft_obstacle):
 
     key_heap = []
     count_tie_break = {}
-    count_tie_break[(0, 0, 0)] = -1 #c_val, g_val    
+    count_tie_break[(0, 0)] = -1 #f_val, c_val    
     open_list = {}
-    heapq.heappush(key_heap, (0, 0, 0, 0))
-    open_list[(0, 0, 0, 0)] = root
+    # (f_val, c_val, -tiebreak) tiebreak: later nodes of same value first
+    heapq.heappush(key_heap, (0, 0, 0))
+    open_list[(0, 0, 0)] = root
     visited_list = {}
     visited_list[(root['loc'], root['id'], root['is_goal'])] = {}
-    visited_list[(root['loc'], root['id'], root['is_goal'])][(root['c_val'], root['interval'][0], root['interval'][1])] = (root, (0, 0, 0, 0))
+    visited_list[(root['loc'], root['id'], root['is_goal'])][(root['c_val'], root['interval'][0], root['interval'][1])] = (root, (0, 0, 0))
+
+    last_c_val = 0
+    newOpen = set()
+    newClosed = set()
 
     closed_list = []
     while len(key_heap) > 0:
@@ -278,6 +291,12 @@ def sipps(my_map, start_loc, goal_loc, h_values, hard_obstacle, soft_obstacle):
         if currKey not in open_list:
             continue
         curr = open_list[currKey]
+        #print(curr['c_val'])
+        if curr['c_val'] > last_c_val:
+            #print(len(key_heap))
+            directivesQueue.append(['isocost contour', newOpen, newClosed])
+            newOpen = set()
+            newClosed = set()
 
         if curr['is_goal']:
             return get_path(curr)
@@ -291,9 +310,12 @@ def sipps(my_map, start_loc, goal_loc, h_values, hard_obstacle, soft_obstacle):
             updated_node = curr.copy()
             updated_node['is_goal'] = True
             updated_node['c_val'] = curr['c_val'] + c_future
-            insert_node(updated_node, open_list, key_heap, visited_list, h_values, soft_obstacle, count_tie_break)
+            insert_node(updated_node, open_list, key_heap, visited_list, h_values, soft_obstacle, count_tie_break, newOpen)
 
-        expand_node(my_map, curr, open_list, key_heap, visited_list, safe_interval_table, hard_obstacle, soft_obstacle, h_values, count_tie_break) 
+        expand_node(my_map, curr, open_list, key_heap, visited_list, safe_interval_table, hard_obstacle, soft_obstacle, h_values, count_tie_break, newOpen, newClosed)
+        last_c_val = curr['c_val']
+
+
         
     # If there is no solution, return None to track of agents who does not have solutions when finding initial paths
     return None
