@@ -77,13 +77,13 @@ def replan(paths, numNeighbourhood, instanceMap, instanceStarts, instanceGoals, 
 
     if neighbourhood_kind == 0:
         neighbourhood = collisionNeighbourhood(paths, numNeighbourhood, instanceMap)
-        directivesQueue.append(['neighbourhood', 'collision', neighbourhood, ALNS_weight])
+        directivesQueue.append(['neighbourhood', 'collision', set(neighbourhood), ALNS_weight])
     elif neighbourhood_kind == 1:
         neighbourhood = failureNeighbourhood(paths, numNeighbourhood)
-        directivesQueue.append(['neighbourhood', 'failure', neighbourhood, ALNS_weight])
+        directivesQueue.append(['neighbourhood', 'failure', set(neighbourhood), ALNS_weight])
     else:
         neighbourhood = randomNeighbourhood(paths, numNeighbourhood)
-        directivesQueue.append(['neighbourhood', 'random', neighbourhood, ALNS_weight])
+        directivesQueue.append(['neighbourhood', 'random', set(neighbourhood), ALNS_weight])
 
     #run modified prioritized planning to get replanned paths
     neighbourhood, newPaths = prioritized_planning(paths, neighbourhood, instanceMap, instanceStarts, instanceGoals, directivesQueue)

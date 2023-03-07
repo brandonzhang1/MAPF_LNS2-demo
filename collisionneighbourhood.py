@@ -2,7 +2,7 @@ from random import randrange
 import time
 import heapq
 
-def collisionNeighbourhood(paths, N, width, height, instanceMap):
+def collisionNeighbourhood(paths, N, instanceMap):
 	#organize paths into lookup dictionary
 	timepos = {} # {y, x, t}: [agents...]
 	numAgents = len(paths)

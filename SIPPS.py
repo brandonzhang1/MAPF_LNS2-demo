@@ -284,6 +284,7 @@ def sipps(my_map, start_loc, goal_loc, h_values, hard_obstacle, soft_obstacle, d
     last_c_val = 0
     newOpen = set()
     newClosed = set()
+    isocostContours = []
 
     closed_list = []
     while len(key_heap) > 0:
@@ -294,17 +295,19 @@ def sipps(my_map, start_loc, goal_loc, h_values, hard_obstacle, soft_obstacle, d
         #print(curr['c_val'])
         if curr['c_val'] > last_c_val:
             #print(len(key_heap))
-            directivesQueue.append(['isocost contour', newOpen, newClosed])
+            isocostContours.append((newOpen, newClosed))
             newOpen = set()
             newClosed = set()
 
         if curr['is_goal']:
+            directivesQueue.append(['isocost contours', isocostContours])
             return get_path(curr)
 
         if curr['loc'] == goal_loc and curr['interval'][0] >= lower_bound_timestep:
             c_future = get_c_future(curr['loc'], soft_obstacle, curr['interval'][0])
             
             if c_future == 0:
+                directivesQueue.append(['isocost contours', isocostContours])
                 return get_path(curr)
 
             updated_node = curr.copy()
