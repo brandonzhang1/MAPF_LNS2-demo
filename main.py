@@ -215,6 +215,8 @@ if __name__ == '__main__':
 	directorySurface = pg.Surface((200, mapHeight*cellSize))
 	#directorySurface.fill((255, 255, 255))
 	directoryYcoord = 0
+	directoryListingYSize = 15
+	directoryListingYOffset = 15
 	while running:
 		#animate using event history
 		time = pg.time.get_ticks()
@@ -235,7 +237,7 @@ if __name__ == '__main__':
 					progSurfaceDims = [0, 0, 0, 0]
 
 			#always draw new directory listings
-			displaySurface.blit(directorySurface, ((mapWidth+1)*cellSize + 20, 12))
+			displaySurface.blit(directorySurface, ((mapWidth+1)*cellSize + 20, directoryListingYOffset))
 			pg.display.update()
 
 		#check history for new captions to add to directory
@@ -243,7 +245,7 @@ if __name__ == '__main__':
 			caption = eventHistory[directoryCheckIdx]['caption']
 			surface = textGenerator.render(caption, True, (0, 0, 0), (200, 200, 200))
 			#12px per line
-			directorySurface.blit(surface, (0, directoryYcoord*12))
+			directorySurface.blit(surface, (0, directoryYcoord*directoryListingYSize))
 			#find last agent
 			solutionDirectory[directoryYcoord] = [(0, directoryCheckIdx, surface.get_size())]
 			
@@ -253,7 +255,7 @@ if __name__ == '__main__':
 				caption = eventHistory[directoryCheckIdx]['caption']
 				xoffset = surface.get_size()[0] + 10 #from prev surface
 				surface = textGenerator.render(caption, True, (0, 0, 0), (200, 200, 200))
-				directorySurface.blit(surface, (xoffset, directoryYcoord*12))
+				directorySurface.blit(surface, (xoffset, directoryYcoord*directoryListingYSize))
 				solutionDirectory[directoryYcoord].append((xoffset, directoryCheckIdx, surface.get_size()))
 
 			directoryCheckIdx+=1
@@ -294,7 +296,7 @@ if __name__ == '__main__':
 				#hash into solution directory
 				if pos[0] > (mapWidth+1)*cellSize + 20:
 					x = pos[0] - (mapWidth+1)*cellSize - 20
-					y = (pos[1]-12)//12
+					y = (pos[1]-directoryListingYOffset)//directoryListingYSize
 					if y in solutionDirectory:
 						boxes = solutionDirectory[y]
 						for item in boxes:
