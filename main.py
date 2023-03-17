@@ -2,7 +2,6 @@ from loadscen import *
 from ReplanPPSIPPS import *
 import pygame as pg
 import threading
-import multiprocessing as mp
 from concurrent.futures import thread
 import time
 import copy
@@ -26,15 +25,24 @@ def drawPath(path, colour, mapSize, cellSize, width=0):
 		bottom = max(bottom, path[i][1])
 		left = min(left, path[i][0])
 		right = max(right, path[i][0])
-	return (pathSurface, top, bottom+1, left, right+1)
+	#return (pathSurface, top, bottom+1, left, right+1)
+	return (pathSurface, (left*cellSize, top*cellSize), (left*cellSize, top*cellSize, (right+1-left)*cellSize, (bottom+1-top)*cellSize))
 
-def recv_animation_directives(directivesQueue, history, mapSurface, cellSize, pathColours, starts):
-	history[0][3] = mapSurface.copy()
+def drawCollisions(surface, collisions, cellSize):
+	red = pg.Color((220, 0, 0))
+	for c in collisions:
+		drawBigCell(surface, c[0][0], c[0][1], red, cellSize)
+		if len(c) == 4:
+			drawBigCell(surface, c[1][0], c[1][1], red, cellSize)
+
+def recv_animation_directives(directivesQueue, history, mapSurface, cellSize, pathColours, starts, event):
 	stop = False
 	index = 0
 	oldCollisions = []
-	lastImprovedStatic = None
+	oldSolutionStatic = None
 	while stop == False:
+		if event.is_set():
+			return
 		if index >= len(directivesQueue):
 			if directivesQueue[-1] == 'done':
 				return
@@ -44,131 +52,73 @@ def recv_animation_directives(directivesQueue, history, mapSurface, cellSize, pa
 			if directive == 'done':
 				stop = True
 				break
-
-			currStep = copy.copy(history[-1])
-			history.append(currStep)
-
+			
+			def copyLastEvent():
+				currStep = copy.copy(history[-1])
+				history.append(currStep)
+				return currStep
+			
 			if directive[0] == 'initial paths':
-				for agentPath in currStep[2]:
-					currStep[0][agentPath['agent']] = {
-						'path': agentPath['path'], 
-						'surface': agentPath['surface']
-					}
-				currStep[2] = []
-				lastImprovedStatic = currStep[3].copy()
-				currStep[4] = None
-				
+				currStep = copyLastEvent()
+				currStep['collisions'] = directive[1]
+				currStep['neighbourhood']['weights'] = directive[2]
+				currStep['solution'] = [None]*len(currStep['neighbourhood']['completedPaths'])
+				currStep['static'] = history[-2]['static'].copy()
+				for agent in currStep['neighbourhood']['completedPaths'].keys():
+					path = currStep['neighbourhood']['completedPaths'][agent]
+					currStep['solution'][agent] = path
+				drawCollisions(currStep['static'], currStep['collisions'], cellSize)
 
 			if directive[0] == 'neighbourhood':
-				currStep[1] = {'neighbourhood': directive[2], 'ALNSweights': directive[3]}
-				#create new static
-				newStatic = mapSurface.copy()
-				# draw paths outside neighbourhood not including starts and goals
-				for i in range(len(currStep[0])):
-					if i not in currStep[1]['neighbourhood']:
-						temp = currStep[0][i]['surface']
-						newStatic.blit(temp[0], (temp[3]*cellSize, temp[1]*cellSize), (temp[3]*cellSize, temp[1]*cellSize, (temp[4]-temp[3])*cellSize, (temp[2]-temp[1])**cellSize))
-
-				#filter collisions without neighbourood paths
-				oldCollisions = currStep[5]
-				currStep[5] = []
-				for collision in oldCollisions:
-					if collision[1] not in currStep[1]['neighbourhood'] and collision[2] not in currStep[1]['neighbourhood']:
-						currStep[5].append(collision)
-
-				currStep[3] = newStatic
+				currStep = copyLastEvent()
+				oldCollisions = currStep['collisions']
+				currStep['neighbourhood'] = {'agents': directive[2], 'weights': directive[3], 'completedPaths': {}, 'currentPath': None}
+				currStep['collisions'] = [c for c in oldCollisions if 
+			      	(len(c) == 3 and (c[1] not in directive[2] and c[2] not in directive[2])) 
+					or (len(c) == 4 and (c[2] not in directive[2] and c[3] not in directive[2]))]
+				oldSolutionStatic = currStep['static']
+				currStep['static'] = mapSurface.copy()
+				for agent in range(len(currStep['solution'])):
+					if agent not in directive[2]:
+						path = currStep['solution'][agent]
+						currStep['static'].blit(path[0], path[1], path[2])
+				drawCollisions(currStep['static'], currStep['collisions'], cellSize)
 
 			if directive[0] == 'pathing for agent':
-				#setup Surface to draw isocontour progression from OPEN/CLOSED lists
-				exploredSurface = pg.Surface(mapSurface.get_size())
-				exploredSurface.set_colorkey(pg.Color(0, 0, 0))
-				currStep[4] = [exploredSurface, 0, 0, 0, 0] #top, bottom, left, right
-			
+				currStep = copyLastEvent()
+				currStep['neighbourhood'] = copy.copy(history[-2]['neighbourhood'])
+				currStep['neighbourhood']['currentPath'] = {'agent': directive[1], 'progression': [],}
+
 			if directive[0] == 'isocost contours': #[1]: [(newOpen, newClosed), ...]
-				prevStep = currStep
-				for i in range(len(directive[1])):
-					nextStep = copy.copy(prevStep)
-					
-					#draw new contour step
-					contourSurface = nextStep[4][0].copy()
-					nextStep[4] = [contourSurface, nextStep[4][1], nextStep[4][2], nextStep[4][3], nextStep[4][4]]
-					
-					#draw dark blue CLOSED
-					colour = pg.Color((0, 0, 100))
-					for loc in directive[1][i][1]: #newClosed
-						drawCell(contourSurface, loc[0], loc[1], colour, cellSize)
-					
-					#draw light blue OPEN
-					colour = pg.Color((0, 0, 200))
-					for loc in directive[1][i][0]: #newOpen
-						drawCell(contourSurface, loc[0], loc[1], colour, cellSize)
-						#check for new area boundary
-						if loc[1] < nextStep[4][1]:
-							nextStep[4][1] = loc[1]
-						if loc[1]+1 > nextStep[4][2]:
-							nextStep[4][2] = loc[1]+1
-						if loc[0] < nextStep[4][3]:
-							nextStep[4][3] = loc[0]
-						if loc[0]+1 > nextStep[4][4]:
-							nextStep[4][4] = loc[0]+1
-					
-					nextStep[4][0] = contourSurface
-					history.append(nextStep)
-					prevStep = history[-1]
-
+				currStep = history[-1]
+				currStep['neighbourhood']['currentPath']['progression'] = directive[1]
+				
 			if directive[0] == 'path done':
-				#add to completed paths
-				newPath = {'agent': directive[1], 
-					'path': directive[2],
-					'surface': drawPath(directive[2], pathColours[directive[1]], mapSurface.get_size(), cellSize)
-				}
-
-				#copy previous completed paths to new list and add new path
-				currStep[2] = []
-				for completedPath in history[-2][2]:
-					currStep[2].append(completedPath)
-				currStep[2].append(newPath)
-
-				#draw new path to static
-				colour = pathColours[newPath['agent']]
-				temp = newPath['surface']
-				newStatic = currStep[3].copy()
-				newStatic.blit(temp[0], (temp[3]*cellSize, temp[1]*cellSize), (temp[3]*cellSize, temp[1]*cellSize, (temp[4]-temp[3])*cellSize, (temp[2]-temp[1])**cellSize))
-				currStep[3] = newStatic
-
-				#clear isocontours
-				currStep[4] = None
-
-				#check for collisions and add to collisions and draw to static
-				currStep[5] = copy.copy(currStep[5])
-				for priorPath in currStep[2]:
-					for i in range(min(len(priorPath['path']), len(newPath['path']))):
-						if newPath['path'][i] == priorPath['path'][i]:
-							collision = (newPath['path'][i], newPath['agent'], priorPath['agent'])
-							currStep[5].append(collision)
-							drawCell(currStep[3], collision[0][0], collision[0][1], pg.Color((200, 0, 0)), cellSize, 1)
+				currStep = copyLastEvent()
+				path = drawPath(directive[2], pathColours[directive[1]], mapSurface.get_size(), cellSize)
+				currStep['neighbourhood'] = copy.copy(history[-2]['neighbourhood'])
+				currStep['neighbourhood']['completedPaths'][directive[1]] = path
+				currStep['neighbourhood']['currentPath'] = None
+				currStep['static'] = history[-2]['static'].copy()
+				currStep['static'].blit(path[0], path[1], path[2])
 
 			if directive[0] == 'improved solution':
-				#add new paths to current solution
-				newStatic = currStep[3].copy()
-				for agentPath in currStep[2]:
-					currStep[0][agentPath['agent']] = {
-						'path': agentPath['path'], 
-						'surface': agentPath['surface']
-					}
-				currStep[2] = []
-				currStep[1] = None
-				lastImprovedStatic = currStep[3].copy()
-				currStep[4] = None
-				oldCollisions = currStep[5]
-
+				currStep = copyLastEvent()
+				currStep['collisions'] = directive[1]
+				currStep['solution'] = copy.copy(history[-2]['solution'])
+				for agent in currStep['neighbourhood']['completedPaths'].keys():
+					currStep['solution'][agent] = currStep['neighbourhood']['completedPaths'][agent]
+				currStep['neighbourhood']['completedPaths']
+				currStep['neighbourhood'] = {'agents': set(), 'weights': directive[2], 'completedPaths': {}, 'currentPath': None}
+				currStep['static'] = history[-2]['static'].copy()
+				drawCollisions(currStep['static'], currStep['collisions'], cellSize)
+				
 			if directive[0] == 'no improvement':
-				#revert to previous solution and static and reset variables
-				currStep[1] = None
-				currStep[2] = []
-				currStep[3] = lastImprovedStatic
-				currStep[4] = None
-				currStep[5] = oldCollisions
+				currStep = copyLastEvent()
+				currStep['neighbourhood'] = {'agents': set(), 'weights': directive[1], 'completedPaths': {}, 'currentPath': None}
+				currStep['collisions'] = oldCollisions
+				currStep['static'] = oldSolutionStatic
+
 
 if __name__ == '__main__':
 	neighbourhoodSize = 4
@@ -216,47 +166,39 @@ if __name__ == '__main__':
 
 	#setup concurrent thread for running solver and creating directives for animation threads
 	executor = thread.ThreadPoolExecutor()
+	threadEvent = threading.Event()
 	directivesQueue = []
-	t1 = executor.submit(LNS2PP, neighbourhoodSize, instanceMap, starts, goals, directivesQueue)
-
-	#consume directives to produce image frames
-	#event history fields
-	#0 current solution
-	#1 neighbourhood
-	#2 PP completed agents
-	#3 static (draw)
-	#4 current agent path exploration
-	#5 collisions (draw)
-	eventHistory = [ [ [None]*numAgents, set(list(range(numAgents))), [], mapSurface, None, [] ] ]
-	t2 = executor.submit(recv_animation_directives, directivesQueue, eventHistory, mapSurface, cellSize, pathColours, starts)
+	t1 = executor.submit(LNS2PP, neighbourhoodSize, instanceMap, starts, goals, directivesQueue, threadEvent)
+	
+	eventHistory = [{ 'caption': [], 'solution':[], 'neighbourhood': {'agents': set(), 'weights': [], 'completedPaths': {}, 'currentPath': None}, 'collisions': [] , 'static': mapSurface}]
+	t2 = executor.submit(recv_animation_directives, directivesQueue, eventHistory, mapSurface, cellSize, pathColours, starts, threadEvent)
 	executor.shutdown(False)
 
-	def renderFrame(eventHistory, eventHistory_idx):
-		if eventHistory_idx < len(eventHistory):
-			#draw static
-			displaySurface.blit(eventHistory[eventHistory_idx][3], (0, 0))
+	def renderFrame(eventHistory, eventHistory_idx, progIdx, progSurface):
+		#draw static
+		displaySurface.blit(eventHistory[eventHistory_idx]['static'], (0, 0))
 
-			#draw current path progress
-			if eventHistory[eventHistory_idx][4] != None:
-				temp = eventHistory[eventHistory_idx][4]
-				top = temp[1]
-				left = temp[3]
-				width = temp[4] - left
-				height = temp[2] - top
-				displaySurface.blit(temp[0], (left*cellSize, top*cellSize), 
-					(left*cellSize, top*cellSize, width*cellSize, height*cellSize))
+		#handle path prog
+		#draw new closed and new open to progSurface
+		colour = pg.Color((0, 0, 100))
+		if eventHistory[eventHistory_idx]['neighbourhood']['currentPath'] != None:
+			isoContour = eventHistory[eventHistory_idx]['neighbourhood']['currentPath']['progression'][progIdx]
+			for newClosed in isoContour[1]:
+				drawCell(progSurface, newClosed[0], newClosed[1], colour, cellSize)
+			colour = pg.Color((0, 0, 220))
+			for newOpen in isoContour[0]:
+				drawCell(progSurface, newOpen[0], newOpen[1], colour, cellSize)
 
-			#draw collisions
-			red = pg.Color((220, 0, 0))
-			if len(eventHistory[eventHistory_idx][5]) > 0:
-				for collision in eventHistory[eventHistory_idx][5]:
-					drawBigCell(displaySurface, collision[0][0], collision[0][1], red, cellSize)
+		displaySurface.blit(progSurface, (0, 0))
 		pg.display.update()
 
 	running = True
 	pause = False
 	lastDrawnFrame = -1
 	eventHistory_idx = 0
+	progIdx = 0
+	progSurface = pg.Surface(mapSurface.get_size())
+	progSurface.set_colorkey(pg.Color(0, 0, 0))
 	frameRate = 60
 	while running:
 		#animate using event history
@@ -265,24 +207,44 @@ if __name__ == '__main__':
 		if currFrame != lastDrawnFrame and pause == False:
 			#draw next frame
 			lastDrawnFrame = currFrame
-			renderFrame(eventHistory, eventHistory_idx)
-			eventHistory_idx = min(eventHistory_idx + 1, len(eventHistory)-1)
+			renderFrame(eventHistory, eventHistory_idx, progIdx, progSurface)
+			#handle indices
+			progIdx += 1
+			currPath = eventHistory[eventHistory_idx]['neighbourhood']['currentPath']
+			if currPath == None or progIdx >= len(currPath['progression']):
+				eventHistory_idx = min(eventHistory_idx + 1, len(eventHistory)-2)
+				progIdx = 0
+				progSurface = pg.Surface(mapSurface.get_size())
+				progSurface.set_colorkey(pg.Color(0, 0, 0))
+				progSurfaceDims = [0, 0, 0, 0]
 
 		for event in pg.event.get():
 			if event.type == pg.QUIT:
+				threadEvent.set()
 				t1.cancel()
 				t2.cancel()
 				running = False
 			if event.type == pg.KEYDOWN:
 				if event.key == pg.K_SPACE:
 					pause = pause ^ True
+					print(pause)
 				if event.key == pg.K_LEFT:
 					eventHistory_idx = max(eventHistory_idx - 1, 0)
 					if event.mod & pg.KMOD_LSHIFT:
-						eventHistory_idx = max(eventHistory_idx - 9, 0)
-					renderFrame(eventHistory, eventHistory_idx)
+						eventHistory_idx = max(eventHistory_idx - 4, 0)
+					progIdx = 0
+					progSurface = pg.Surface(mapSurface.get_size())
+					progSurface.set_colorkey(pg.Color(0, 0, 0))
+					progSurfaceDims = [0, 0, 0, 0]
+					renderFrame(eventHistory, eventHistory_idx, progIdx, progSurface)
+					
 				if event.key == pg.K_RIGHT:
-					eventHistory_idx = min(eventHistory_idx + 1, len(eventHistory)-1)
+					eventHistory_idx = min(eventHistory_idx + 1, len(eventHistory)-2)
 					if event.mod & pg.KMOD_LSHIFT:
-						eventHistory_idx = min(eventHistory_idx + 9, len(eventHistory)-1)
-					renderFrame(eventHistory, eventHistory_idx)
+						eventHistory_idx = min(eventHistory_idx + 4, len(eventHistory)-2)
+					progIdx = 0
+					progSurface = pg.Surface(mapSurface.get_size())
+					progSurface.set_colorkey(pg.Color(0, 0, 0))
+					progSurfaceDims = [0, 0, 0, 0]
+					renderFrame(eventHistory, eventHistory_idx, progIdx, progSurface)
+					

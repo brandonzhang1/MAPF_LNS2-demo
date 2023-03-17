@@ -62,10 +62,10 @@ def degID(path):
             length = len(path[secondPath]) if len(path[firstPath]) > len(path[secondPath]) else len(path[firstPath])
             for timestep in range(0, length, 1):
                 if compare(path[firstPath][timestep], path[secondPath][timestep]):
-                    degList.append((firstPath, secondPath, timestep))
+                    degList.append((path[firstPath][timestep], firstPath, secondPath))
                     break
                 elif timestep > 0 and compare(path[firstPath][timestep-1], path[secondPath][timestep]) and compare(path[firstPath][timestep], path[secondPath][timestep-1]):
-                    degList.append((firstPath, secondPath, timestep-1, timestep))
+                    degList.append((path[firstPath][timestep], path[secondPath][timestep], firstPath, secondPath))
                     break
     return degList
 
