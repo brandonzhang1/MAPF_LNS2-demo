@@ -60,6 +60,7 @@ def recv_animation_directives(directivesQueue, history, mapSurface, cellSize, pa
 			
 			if directive[0] == 'initial paths':
 				currStep = copyLastEvent()
+				currStep['caption'] = "initial rough solution"
 				currStep['collisions'] = directive[1]
 				currStep['neighbourhood']['weights'] = directive[2]
 				currStep['solution'] = [None]*len(currStep['neighbourhood']['completedPaths'])
@@ -71,6 +72,8 @@ def recv_animation_directives(directivesQueue, history, mapSurface, cellSize, pa
 
 			if directive[0] == 'neighbourhood':
 				currStep = copyLastEvent()
+				#currStep['caption'] = directive[1] + " | " + " ".join([str(a) for a in directive[3]])
+				currStep['caption'] = directive[1] + " neighbourhood: " + " ".join([str(a) for a in directive[2]])
 				oldCollisions = currStep['collisions']
 				currStep['neighbourhood'] = {'agents': directive[2], 'weights': directive[3], 'completedPaths': {}, 'currentPath': None}
 				currStep['collisions'] = [c for c in oldCollisions if 
@@ -86,6 +89,7 @@ def recv_animation_directives(directivesQueue, history, mapSurface, cellSize, pa
 
 			if directive[0] == 'pathing for agent':
 				currStep = copyLastEvent()
+				currStep['caption'] = "agent " + str(directive[1])
 				currStep['neighbourhood'] = copy.copy(history[-2]['neighbourhood'])
 				currStep['neighbourhood']['currentPath'] = {'agent': directive[1], 'progression': [],}
 
@@ -95,6 +99,7 @@ def recv_animation_directives(directivesQueue, history, mapSurface, cellSize, pa
 				
 			if directive[0] == 'path done':
 				currStep = copyLastEvent()
+				currStep['caption'] = "path found"
 				path = drawPath(directive[2], pathColours[directive[1]], mapSurface.get_size(), cellSize)
 				currStep['neighbourhood'] = copy.copy(history[-2]['neighbourhood'])
 				currStep['neighbourhood']['completedPaths'][directive[1]] = path
@@ -104,6 +109,7 @@ def recv_animation_directives(directivesQueue, history, mapSurface, cellSize, pa
 
 			if directive[0] == 'improved solution':
 				currStep = copyLastEvent()
+				currStep['caption'] = "improved solution"
 				currStep['collisions'] = directive[1]
 				currStep['solution'] = copy.copy(history[-2]['solution'])
 				for agent in currStep['neighbourhood']['completedPaths'].keys():
@@ -115,6 +121,7 @@ def recv_animation_directives(directivesQueue, history, mapSurface, cellSize, pa
 				
 			if directive[0] == 'no improvement':
 				currStep = copyLastEvent()
+				currStep['caption'] = "no improvement"
 				currStep['neighbourhood'] = {'agents': set(), 'weights': directive[1], 'completedPaths': {}, 'currentPath': None}
 				currStep['collisions'] = oldCollisions
 				currStep['static'] = oldSolutionStatic
@@ -131,8 +138,9 @@ if __name__ == '__main__':
 	mapHeight = len(instanceMap)
 	mapWidth = len(instanceMap[0])
 	cellSize = (1080/mapHeight)//1
-	pg.display.set_mode((mapWidth*cellSize, mapHeight*cellSize))
+	pg.display.set_mode((mapWidth*cellSize+200, mapHeight*cellSize))
 	displaySurface = pg.display.get_surface()
+	#displaySurface.fill((255, 255, 255))
 
 	mapSurface = pg.Surface((mapWidth*cellSize, mapHeight*cellSize))
 	for i in range(mapWidth):
@@ -170,7 +178,7 @@ if __name__ == '__main__':
 	directivesQueue = []
 	t1 = executor.submit(LNS2PP, neighbourhoodSize, instanceMap, starts, goals, directivesQueue, threadEvent)
 	
-	eventHistory = [{ 'caption': [], 'solution':[], 'neighbourhood': {'agents': set(), 'weights': [], 'completedPaths': {}, 'currentPath': None}, 'collisions': [] , 'static': mapSurface}]
+	eventHistory = [{ 'caption': "initial pathfinding", 'solution':[], 'neighbourhood': {'agents': set(), 'weights': [], 'completedPaths': {}, 'currentPath': None}, 'collisions': [] , 'static': mapSurface}]
 	t2 = executor.submit(recv_animation_directives, directivesQueue, eventHistory, mapSurface, cellSize, pathColours, starts, threadEvent)
 	executor.shutdown(False)
 
@@ -200,23 +208,58 @@ if __name__ == '__main__':
 	progSurface = pg.Surface(mapSurface.get_size())
 	progSurface.set_colorkey(pg.Color(0, 0, 0))
 	frameRate = 60
+
+	solutionDirectory = {}
+	directoryCheckIdx = 0
+	textGenerator = pg.font.Font()
+	directorySurface = pg.Surface((200, mapHeight*cellSize))
+	#directorySurface.fill((255, 255, 255))
+	directoryYcoord = 0
 	while running:
 		#animate using event history
 		time = pg.time.get_ticks()
 		currFrame = time * frameRate // 1000
-		if currFrame != lastDrawnFrame and pause == False:
-			#draw next frame
-			lastDrawnFrame = currFrame
-			renderFrame(eventHistory, eventHistory_idx, progIdx, progSurface)
-			#handle indices
-			progIdx += 1
-			currPath = eventHistory[eventHistory_idx]['neighbourhood']['currentPath']
-			if currPath == None or progIdx >= len(currPath['progression']):
-				eventHistory_idx = min(eventHistory_idx + 1, len(eventHistory)-2)
-				progIdx = 0
-				progSurface = pg.Surface(mapSurface.get_size())
-				progSurface.set_colorkey(pg.Color(0, 0, 0))
-				progSurfaceDims = [0, 0, 0, 0]
+		if currFrame != lastDrawnFrame:
+			if pause == False:
+				#draw next frame
+				lastDrawnFrame = currFrame
+				renderFrame(eventHistory, eventHistory_idx, progIdx, progSurface)
+				#handle indices
+				progIdx += 1
+				currPath = eventHistory[eventHistory_idx]['neighbourhood']['currentPath']
+				if currPath == None or progIdx >= len(currPath['progression']):
+					eventHistory_idx = min(eventHistory_idx + 1, len(eventHistory)-2)
+					progIdx = 0
+					progSurface = pg.Surface(mapSurface.get_size())
+					progSurface.set_colorkey(pg.Color(0, 0, 0))
+					progSurfaceDims = [0, 0, 0, 0]
+
+			#always draw new directory listings
+			displaySurface.blit(directorySurface, ((mapWidth+1)*cellSize + 20, 12))
+			pg.display.update()
+
+		#check history for new captions to add to directory
+		if directoryCheckIdx < len(eventHistory)-1:
+			caption = eventHistory[directoryCheckIdx]['caption']
+			surface = textGenerator.render(caption, True, (0, 0, 0), (200, 200, 200))
+			#12px per line
+			directorySurface.blit(surface, (0, directoryYcoord*12))
+			#find last agent
+			solutionDirectory[directoryYcoord] = [(0, directoryCheckIdx, surface.get_size())]
+			
+			if caption[0] == 'a':	#put path found on same line as agent path prog
+				#print(caption)
+				directoryCheckIdx+=1
+				caption = eventHistory[directoryCheckIdx]['caption']
+				xoffset = surface.get_size()[0] + 10 #from prev surface
+				surface = textGenerator.render(caption, True, (0, 0, 0), (200, 200, 200))
+				directorySurface.blit(surface, (xoffset, directoryYcoord*12))
+				solutionDirectory[directoryYcoord].append((xoffset, directoryCheckIdx, surface.get_size()))
+
+			directoryCheckIdx+=1
+			directoryYcoord+=1
+
+		
 
 		for event in pg.event.get():
 			if event.type == pg.QUIT:
@@ -227,7 +270,6 @@ if __name__ == '__main__':
 			if event.type == pg.KEYDOWN:
 				if event.key == pg.K_SPACE:
 					pause = pause ^ True
-					print(pause)
 				if event.key == pg.K_LEFT:
 					eventHistory_idx = max(eventHistory_idx - 1, 0)
 					if event.mod & pg.KMOD_LSHIFT:
@@ -237,7 +279,6 @@ if __name__ == '__main__':
 					progSurface.set_colorkey(pg.Color(0, 0, 0))
 					progSurfaceDims = [0, 0, 0, 0]
 					renderFrame(eventHistory, eventHistory_idx, progIdx, progSurface)
-					
 				if event.key == pg.K_RIGHT:
 					eventHistory_idx = min(eventHistory_idx + 1, len(eventHistory)-2)
 					if event.mod & pg.KMOD_LSHIFT:
@@ -247,4 +288,22 @@ if __name__ == '__main__':
 					progSurface.set_colorkey(pg.Color(0, 0, 0))
 					progSurfaceDims = [0, 0, 0, 0]
 					renderFrame(eventHistory, eventHistory_idx, progIdx, progSurface)
+			if event.type == pg.MOUSEBUTTONDOWN:
+				#handle positionality
+				pos = event.pos
+				#hash into solution directory
+				if pos[0] > (mapWidth+1)*cellSize + 20:
+					x = pos[0] - (mapWidth+1)*cellSize - 20
+					y = (pos[1]-12)//12
+					if y in solutionDirectory:
+						boxes = solutionDirectory[y]
+						for item in boxes:
+							if x >= item[0] and x < (item[0] + item[2][0]):
+								eventHistory_idx = item[1]
+								progIdx = 0
+								progSurface = pg.Surface(mapSurface.get_size())
+								progSurface.set_colorkey(pg.Color(0, 0, 0))
+								renderFrame(eventHistory, eventHistory_idx, progIdx, progSurface)
+								break
+				
 					
